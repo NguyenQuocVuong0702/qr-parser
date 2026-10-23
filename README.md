@@ -1,6 +1,6 @@
 # EMV QR Parser
 
-Ứng dụng học tập dùng Java 21, Spring Boot 4.1.1 và Maven. API nhận chuỗi QR, đọc TLV, phân tích template 26/62, giải nghĩa metadata, kiểm tra CRC-16 và các quy tắc đã triển khai từ sheet **Type 01**.
+Ứng dụng học tập dùng Java 21, Spring Boot 4.1.1 và Maven. API nhận chuỗi QR, đọc TLV, phân tích template 26/62/80 theo ngữ cảnh, giải nghĩa metadata theo Type và đường dẫn, kiểm tra CRC-16 và các quy tắc từ đủ bốn sheet **Type 01–04**.
 
 Ứng dụng xử lý chuỗi payload đã đọc từ QR. Chưa có chức năng đọc ảnh QR, frontend hoặc thực hiện thanh toán.
 
@@ -60,11 +60,11 @@ src/main/java/com/vnpay/qrparser/
 ├── api/          Controller, xử lý exception và DTO HTTP
 ├── parser/       TlvParser, NestedTlvParser, TlvParseException
 ├── interpreter/  Giải nghĩa cây TLV theo đường dẫn tag
-├── metadata/     Metadata cố định của Type 01, được bảo vệ khỏi thay đổi
+├── metadata/     Metadata bất biến theo QrType và đường dẫn tag
 ├── crc/          CRC-16/CCITT-FALSE và kiểm tra tag CRC
-├── validation/   Điều phối parsing, CRC và specification
+├── validation/   Điều phối và các bộ quy tắc chung / offline / billing / reference
 ├── text/         Kiểm tra Unicode UTF-16 hợp lệ
-└── model/        Tag, cây TLV, trạng thái và model kết quả
+└── model/        QrType, ReferenceLabel, cây TLV, trạng thái và kết quả
 ```
 
 `src/test/java` chứa test cho parser, interpreter, CRC, validation và REST API. Đặc tả gốc nằm tại `docs/MasterData_VNP_QRCode_V1.0.xlsx`.
@@ -73,7 +73,7 @@ Luồng HTTP:
 
 ```text
 JSON → QrAnalyzeRequest → QrAnalyzeController → QrValidationService
-     → parsing → kiểm tra CRC → kiểm tra Type 01 → giải nghĩa tag
+     → parsing → kiểm tra CRC → kiểm tra theo QrType → giải nghĩa tag theo Type và path
      → QrAnalyzeResponse → HTTP status và JSON
 ```
 
@@ -87,7 +87,7 @@ Content-Type: application/json
 Accept: application/json
 ```
 
-Request:
+Request cũ (giữ mặc định Type 01):
 
 ```json
 {
@@ -96,6 +96,50 @@ Request:
 ```
 
 API giữ nguyên chuỗi QR, bao gồm khoảng trắng trong value. Không `trim()`, chuẩn hóa Unicode, tự bổ sung tag hay tính lại CRC để sửa QR.
+
+### Chọn Type và bốn request hợp lệ
+
+`type` là chuỗi `"01"`, `"02"`, `"03"` hoặc `"04"`. Thiếu `type` hoặc `type:null` dùng Type 01 như API cũ. Số, boolean, array, object trả 400 / `TYPE_MUST_BE_STRING`; chuỗi khác (kể cả `"TYPE_01"`, `"auto"`, `"1"`) trả 400 / `INVALID_QR_TYPE`. Không tự trim hoặc tự nhận diện Type từ payload.
+
+Các ví dụ dưới được tạo bằng TLV builder và CRC calculator, được JUnit đọc lại từ README và kiểm tra `VALID`. Chúng minh họa cùng endpoint và trả HTTP 200. Đây là dữ liệu tổng hợp, không dùng để thanh toán.
+
+**Type 01: QR offline tĩnh**
+
+```json
+{
+  "type": "01",
+  "qr": "00020101021126260010A0000007750108MERCHANT5204549953037045802VN5904SHOP6005HANOI62290304SHOP0704TERM0804NOTE0901M63042256"
+}
+```
+
+**Type 02: QR hóa đơn động có kỳ cước 80**
+
+```json
+{
+  "type": "02",
+  "qr": "00020101021226260010A0000007750108MERCHANT5204549953037045802VN5904SHOP6005HANOI62430304SHOP0704TERM0608CUSTOMER0811ELECTRICITY80240010A000000775010612202663042490"
+}
+```
+
+**Type 03: QR sản phẩm tĩnh có số tiền và reference 02**
+
+```json
+{
+  "type": "03",
+  "qr": "00020101021126260010A0000007750108MERCHANT5204549953037045802VN5904SHOP6005HANOI540855000.0062610304SHOP0704TERM0519022612311230PRODUCT0811DESCRIPTION0903AME6304A9F4"
+}
+```
+
+**Type 04: QR đơn hàng động có reference 01**
+
+```json
+{
+  "type": "04",
+  "qr": "00020101021226260010A0000007750108MERCHANT5204549953037045802VN5904SHOP6005HANOI540855000.0062590304SHOP0704TERM0517012612311230ORDER0811DESCRIPTION0903AME6304AB5F"
+}
+```
+
+Type 03/04 phân tích reference tại `62/05`; `displayValue` hiển thị mã sản phẩm/đơn hàng và thời hạn dạng `yymmddhhmm`, còn `value` giữ nguyên. Không thêm tag con giả hoặc thay đổi 5 trường response hiện có.
 
 ### Hợp đồng response
 
@@ -176,7 +220,7 @@ Lỗi request cũng dùng cùng hợp đồng. Ví dụ `{"qr":123}` trả HTTP 
 | TLV hoặc cấu trúc CRC sai | 422 | `INVALID_STRUCTURE` |
 | Unicode chứa surrogate đơn | 422 | `INVALID_STRUCTURE` / `INVALID_UNICODE` |
 | CRC không khớp | 422 | `CRC_MISMATCH` |
-| Vi phạm quy tắc Type 01 đang kiểm tra | 422 | `SPEC_VIOLATION` |
+| Vi phạm quy tắc Type đã chọn | 422 | `SPEC_VIOLATION` |
 | Body thiếu | 400 | `INVALID_REQUEST` / `REQUEST_BODY_REQUIRED` |
 | Body JSON `null` | 400 | `INVALID_REQUEST` / `REQUEST_BODY_NULL` |
 | Body không phải object JSON | 400 | `INVALID_REQUEST` / `REQUEST_BODY_MUST_BE_OBJECT` |
@@ -191,7 +235,7 @@ Lỗi request cũng dùng cùng hợp đồng. Ví dụ `{"qr":123}` trả HTTP 
 
 Khi client chỉ chấp nhận kiểu khác JSON, ví dụ `Accept: text/plain`, server có thể trả **406 với body rỗng**. Hành vi này được giữ nguyên; nên gửi `Accept: application/json`.
 
-Nếu CRC mismatch và đồng thời có lỗi Type 01, trạng thái chính là `CRC_MISMATCH`, danh sách errors vẫn chứa lỗi specification. Nếu cấu trúc ngăn kiểm tra CRC, hệ thống không suy đoán kết quả CRC.
+Nếu CRC mismatch và đồng thời có lỗi specification, trạng thái chính là `CRC_MISMATCH`, danh sách errors vẫn chứa lỗi specification. Nếu cấu trúc ngăn kiểm tra CRC, hệ thống không suy đoán kết quả CRC.
 
 ## Unicode, Length và offset
 
@@ -215,26 +259,31 @@ Nếu malformed Unicode được phát hiện ngay khi đọc value của templa
 
 ## Phạm vi specification
 
-Metadata và quy tắc nghiệp vụ lấy từ **sheet Type 01**, không đọc workbook tại runtime. Tag chưa có metadata được giữ nguyên và dùng tên `Unknown Tag`.
+Đã đọc toàn bộ bốn sheet, không đọc workbook tại runtime. Bảng đối chiếu `docs/TAG_MATRIX.md` và audit `docs/EXCEL_EXAMPLE_AUDIT.md` là tài liệu cục bộ được sinh từ workbook nội bộ; các file này được `.gitignore` bảo vệ và không có trong bản clone sạch. Có thể tái tạo tại máy có workbook bằng `python tools/audit_spec.py` (Python standard library, không sửa Excel). `docs/SPEC_AMBIGUITIES.md` và `docs/UPGRADE_REPORT.md` cũng được giữ cục bộ. Không đưa các tài liệu này lên GitHub khi chưa được phép chia sẻ.
 
-Các kiểm tra chính gồm tag bắt buộc, GUID 26/00, định dạng N của các trường được xác định, length cố định/tối đa, phiên bản 00=01, điều kiện QR tĩnh/động và Additional Consumer Data Request.
+| Type | Quy tắc riêng |
+|---|---|
+| 01 — offline | Giữ 62/01, 03, 07, 08, 09; 01=11 không có 54/62/01, 01=12 cần cả hai. |
+| 02 — hóa đơn / khách hàng | 62/03, 06, 07, 08; mở 80 và yêu cầu 80/00 (≤32), 80/01 (≤20) trong mỗi instance. 01=11 không có kỳ cước, 01=12 cần kỳ cước. Không yêu cầu 62/09 hoặc áp quy tắc amount/bill Type 01. |
+| 03 — sản phẩm | 62/03, 05, 07, 08, 09; nếu có 01 chỉ nhận 11. Reference `02 + yymmddhhmm + mã sản phẩm`, tối đa 25 code point. 54 có thể xuất hiện. |
+| 04 — đơn hàng | 62/03, 05, 07, 08, 09; nếu có 01 chỉ nhận 12. Reference `01 + yymmddhhmm + mã đơn hàng`, tối đa 25 code point. Không tự yêu cầu 62/01. |
 
-Tag 58 phải gồm hai chữ cái Latin viết hoa, ví dụ `VN` hoặc `US`. Hiện chỉ kiểm tra **định dạng**, chưa đối chiếu danh sách quốc gia. Currency, MCC và GUID/AID cũng chưa được xác minh đầy đủ với danh mục ISO hoặc tổ chức thanh toán.
+Các rule chung chỉ được dùng sau khi đối chiếu cả bốn sheet: tag root bắt buộc, GUID trong mỗi 26, N, fixed/max length, phiên bản 00=01 và country dạng hai chữ Latin viết hoa. 62/09 bắt buộc khi có 62 ở Type 01/03/04 theo J31=M; Type 02 không có trường này trong sheet. Tag không được sheet định nghĩa vẫn được giữ, có metadata `Unknown Tag`, không áp quy tắc của Type khác.
 
-**62/09:** Excel `Type 01!J31=M` yêu cầu trường này khi có tag 62. EMVCo Merchant-Presented Mode v1.1 Table 3.7 coi nó là optional. Vì vậy QR mẫu có CRC hợp lệ nhưng bị `SPEC_VIOLATION` theo Excel. Điều này không có nghĩa dữ liệu bị sửa; ứng dụng không tự thêm 62/09 hay đổi CRC.
+`CommonQrRules` xử lý các ràng buộc chung; `OfflineQrRules`, `BillingQrRules`, `ReferenceQrRules` xử lý khác biệt từng Type. `ValidationContext` giữ vị trí UTF-16. Các overload `validate(qr)`, `parse(qr)`, `interpret(nodes)`, `lookup(path)` tiếp tục mặc định Type 01. Overload có `QrType` phục vụ caller chọn loại rõ ràng. `QrAnalyzeRequest.type()` giữ kiểu JSON gốc để không ép kiểu số thành chuỗi.
 
-**QR tĩnh/động:** điều kiện 01=11 không có 54 và 62/01; 01=12 có cả 54 và 62/01 lấy từ Excel Type 01!F5/L5. Không diễn giải thành quy tắc EMVCo chung hoặc khả năng ngăn thanh toán lặp.
+### Giới hạn đã biết và điểm cần review
 
-Các chính sách được giữ nguyên trong đợt hoàn thiện này:
+Chi tiết từng ô và quyết định nằm trong `docs/SPEC_AMBIGUITIES.md` cục bộ. Các giới hạn của phần triển khai:
 
-- Chỉ nhận template 26 và 62 ở cấp ngoài; các tag con là nút lá.
-- Chưa từ chối mọi tag trùng ngoài CRC 63.
-- Parser vẫn chấp nhận length 00; không thêm quy tắc minimum length chung.
-- Chưa yêu cầu tag 00 nằm đầu payload.
-- Chưa yêu cầu các ký tự A/M/E của 62/09 phải xuất hiện duy nhất.
-- Chưa áp dụng đầy đủ tập ký tự `ans`, mọi template, RFU hoặc toàn bộ EMVCo.
+- Type 02!C30 ghi N cho 80 nhưng các con ghi ans; triển khai TLV theo schema con, không ép value cha chỉ gồm số. Kỳ cước không bị ép thành MMYYYY.
+- 54 được đánh C ở Type 03/04 nhưng không có điều kiện cụ thể; chỉ kiểm tra khi xuất hiện. Tag 01 và 62/05 vẫn optional theo sheet.
+- Thời hạn reference giữ nguyên `yymmddhhmm`; kiểm tra ngày theo năm/tháng/ngày và giờ/phút. Với `yy` khác `00`, 29/02 chỉ hợp lệ khi `yy` chia hết cho 4. Với `yy=00`, thế kỷ chưa được quy định nên giữ chấp nhận 29/02 như trước để chờ xác nhận; không tự quy đổi thế kỷ, timestamp hoặc xét hết hạn.
+- Không có đủ bằng chứng để tự nhận diện Type. Payload tối thiểu có thể hợp lệ cho nhiều Type. Thiếu type vẫn là Type 01, kể cả khi payload có prefix reference 01/02 hoặc tag 80.
+- Giữ Unicode, length 00, thứ tự root và tag trùng như trước (ngoại trừ CRC). Không cấm ký tự A/M/E lặp. Không áp bảng ký tự ans, schema mạng thanh toán khác hoặc quy tắc ISO không có trong workbook.
+- Country, currency, MCC, GUID/AID chưa đối chiếu danh mục đầy đủ. Format số tiền ans chưa có regex/điều kiện dương hoặc số lẻ; không tự áp quy tắc tài chính ngoài tài liệu.
 
-`VALID` nghĩa là vượt qua **phạm vi kiểm tra đang triển khai**, không phải chứng nhận tuân thủ toàn bộ EMVCo, ISO hoặc mạng thanh toán.
+`VALID` nghĩa là vượt qua phạm vi các kiểm tra đã triển khai, không phải chứng nhận đầy đủ EMVCo/ISO hoặc khả năng thanh toán. Không sửa ví dụ Excel bị sai length/CRC để biến chúng thành bằng chứng dương.
 
 ## CRC và dữ liệu nhạy cảm
 
@@ -259,7 +308,7 @@ Trong Postman:
 7. Thử `{"qr":"9901\ud800"}`: mong đợi 422 / `INVALID_UNICODE`.
 8. Trong QR mẫu, đổi **lần xuất hiện đầu tiên** của `DONG QUE 79` thành `DONG QUE 78`, giữ CRC: mong đợi 422 / `CRC_MISMATCH`, computed CRC `93F6`.
 
-JUnit có fixture QR vượt qua Type 01 được tạo riêng bằng các tag và calculator; QR mẫu gốc không bị sửa để làm fixture hợp lệ.
+JUnit có fixture cho cả bốn Type được tạo riêng bằng TLV builder và CRC calculator; QR mẫu gốc không bị sửa để làm fixture hợp lệ.
 
 PowerShell:
 

@@ -14,6 +14,10 @@ public record QrAnalyzeRequest(JsonNode body) {
         return body.get("qr");
     }
 
+    public JsonNode type() {
+        return body.get("type");
+    }
+
     public static class Deserializer extends ValueDeserializer<QrAnalyzeRequest> {
 
         @Override

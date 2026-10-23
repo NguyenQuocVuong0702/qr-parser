@@ -36,3 +36,13 @@ build/
 .env.*
 *.log
 docs/*.xlsx
+
+# Internal QR workbook and its derived documents stay on this machine.
+MasterData_VNP_QRCode_*.xlsx
+/docs/TAG_MATRIX.md
+/docs/EXCEL_EXAMPLE_AUDIT.md
+/docs/SPEC_AMBIGUITIES.md
+/docs/UPGRADE_REPORT.md
+/docs/internal/
+/Type-0[1-4].txt
+/workbook-extract.json

@@ -1,6 +1,7 @@
 package com.vnpay.qrparser.parser;
 
 import com.vnpay.qrparser.model.TlvNode;
+import com.vnpay.qrparser.model.QrType;
 import com.vnpay.qrparser.model.TlvTag;
 import com.vnpay.qrparser.model.QrValidationError;
 import com.vnpay.qrparser.model.QrValidationError.Code;
@@ -13,6 +14,10 @@ public class NestedTlvParser {
     private final TlvParser tlvParser = new TlvParser();
 
     public List<TlvNode> parse(String input) {
+        return parse(input, QrType.TYPE_01);
+    }
+
+    public List<TlvNode> parse(String input, QrType type) {
         // Dùng parser cấp 1 để đọc toàn bộ tag ngoài cùng.
         List<TlvTag> tags = tlvParser.parse(input);
         List<TlvNode> nodes = new ArrayList<>();
@@ -21,8 +26,9 @@ public class NestedTlvParser {
         for (TlvTag tag : tags) {
             List<TlvNode> children = List.of();
 
-            // Chỉ nhận biết template 26 và 62 ở cấp ngoài cùng.
-            if ("26".equals(tag.tag()) || "62".equals(tag.tag())) {
+            // 80 chỉ là template ở Type 02. Tag con luôn là lá.
+            if ("26".equals(tag.tag()) || "62".equals(tag.tag())
+                    || (type == QrType.TYPE_02 && "80".equals(tag.tag()))) {
                 children = parseChildren(tag, parentHeaderOffset);
             }
 

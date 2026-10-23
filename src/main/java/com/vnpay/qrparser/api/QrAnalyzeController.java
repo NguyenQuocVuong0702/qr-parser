@@ -3,6 +3,7 @@ package com.vnpay.qrparser.api;
 import com.vnpay.qrparser.api.dto.QrAnalyzeRequest;
 import com.vnpay.qrparser.api.dto.QrAnalyzeResponse;
 import com.vnpay.qrparser.model.QrValidationResult;
+import com.vnpay.qrparser.model.QrType;
 import com.vnpay.qrparser.validation.QrValidationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -43,7 +44,23 @@ public class QrAnalyzeController {
         }
 
         // Null hoặc chuỗi được chuyển nguyên vẹn vào service, không trim hay sửa nội dung.
-        QrValidationResult result = validationService.validate(qr.isNull() ? null : qr.asString());
+        String payload = qr.isNull() ? null : qr.asString();
+        JsonNode requestedType = request.type();
+        QrValidationResult result;
+        if (requestedType == null || requestedType.isNull()) {
+            result = validationService.validate(payload);
+        } else {
+            if (!requestedType.isString()) {
+                return invalidRequest("TYPE_MUST_BE_STRING", "Thuộc tính type phải là chuỗi JSON hoặc null.");
+            }
+            QrType type;
+            try {
+                type = QrType.fromCode(requestedType.asString());
+            } catch (IllegalArgumentException exception) {
+                return invalidRequest("INVALID_QR_TYPE", "Type phải là 01, 02, 03 hoặc 04.");
+            }
+            result = validationService.validate(payload, type);
+        }
         HttpStatus httpStatus = switch (result.status()) {
             case VALID -> HttpStatus.OK;
             case INVALID_INPUT -> HttpStatus.BAD_REQUEST;
