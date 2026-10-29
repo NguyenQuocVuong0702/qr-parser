@@ -23,13 +23,13 @@ public class TlvParser {
 
             // Mỗi header cần 2 ký tự tag và 2 ký tự length.
             if (remainingCharacters < 4) {
-                checkUnicode(input.substring(position), "", position);
+                checkUnicode(input.substring(position), "", position, "header");
                 throw new TlvParseException(Code.INCOMPLETE_HEADER, "", position,
                         "Thiếu header tại vị trí " + position
                                 + ": cần 4 ký tự, chỉ còn " + remainingCharacters + ".");
             }
 
-            checkUnicode(input.substring(position, position + 4), "", position);
+            checkUnicode(input.substring(position, position + 4), "", position, "header");
             String tag = input.substring(position, position + 2);
             String lengthText = input.substring(position + 2, position + 4);
 
@@ -55,7 +55,7 @@ public class TlvParser {
                 availableValueCharacters++;
             }
             String value = input.substring(valueStart, valueEnd);
-            checkUnicode(value, tag, position);
+            checkUnicode(value, tag, position, "value");
 
             // Báo lỗi nếu đã hết dữ liệu mà vẫn chưa đọc đủ số code point khai báo.
             if (availableValueCharacters < length) {
@@ -74,10 +74,22 @@ public class TlvParser {
         return tags;
     }
 
-    private void checkUnicode(String text, String tag, int headerOffset) {
-        if (UnicodeText.containsUnpairedSurrogate(text)) {
-            throw new TlvParseException(Code.INVALID_UNICODE, tag, headerOffset,
-                    "Dữ liệu TLV chứa surrogate đơn không hợp lệ tại header ở vị trí " + headerOffset + ".");
-        }
+    private void checkUnicode(String text, String tag,
+                          int headerOffset, String part) {
+    if (UnicodeText.containsUnpairedSurrogate(text)) {
+
+        String location = part.equals("header")
+                ? "header tại vị trí " + headerOffset
+                : "value của tag " + tag
+                    + " (tag bắt đầu tại vị trí " + headerOffset + ")";
+
+        throw new TlvParseException(
+                Code.INVALID_UNICODE,
+                tag,
+                headerOffset,
+                "Dữ liệu TLV chứa surrogate đơn không hợp lệ ở "
+                        + location + "."
+        );
     }
+}
 }

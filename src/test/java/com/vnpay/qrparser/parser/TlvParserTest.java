@@ -11,6 +11,7 @@ import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TlvParserTest {
 
@@ -220,4 +221,21 @@ class TlvParserTest {
         assertEquals(Code.INVALID_UNICODE, exception.error().code());
         assertEquals(0, exception.error().absoluteOffset());
     }
+
+    @Test
+void invalidUnicodeInValueShouldMentionValue() {
+    String invalidUnicode = String.valueOf((char) 0xD800);
+    String input = "5901" + invalidUnicode;
+
+    TlvParseException exception = assertThrows(
+            TlvParseException.class,
+            () -> new TlvParser().parse(input)
+    );
+
+    assertEquals(Code.INVALID_UNICODE, exception.error().code());
+
+    assertTrue(
+            exception.error().message().contains("value của tag 59")
+    );
+}
 }
