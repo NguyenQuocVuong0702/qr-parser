@@ -53,6 +53,8 @@ java -jar .\target\qr-parser-0.0.1-SNAPSHOT.jar --server.port=8081
 
 Trên Linux/macOS, dùng `./mvnw` thay cho `.\mvnw.cmd`. Kết quả JUnit nằm trong `target/surefire-reports`.
 
+Trên Windows PowerShell, thuộc tính filesystem `Target` của thư mục cache có thể là `null`, collection rỗng hoặc đường dẫn junction tùy môi trường/quyền truy cập. Wrapper xử lý cả ba trường hợp trước khi chọn cache Maven; lỗi `Cannot index into a null array` từng được tái hiện khi `Target=null`, không xảy ra ở mọi máy. Dùng `.\mvnw.cmd --version` để kiểm tra wrapper và môi trường Java trước khi build.
+
 ## Cấu trúc và luồng xử lý
 
 ```text
@@ -259,7 +261,7 @@ Nếu malformed Unicode được phát hiện ngay khi đọc value của templa
 
 ## Phạm vi specification
 
-Đã đọc toàn bộ bốn sheet, không đọc workbook tại runtime. Bảng đối chiếu `docs/TAG_MATRIX.md` và audit `docs/EXCEL_EXAMPLE_AUDIT.md` là tài liệu cục bộ được sinh từ workbook nội bộ; các file này được `.gitignore` bảo vệ và không có trong bản clone sạch. Có thể tái tạo tại máy có workbook bằng `python tools/audit_spec.py` (Python standard library, không sửa Excel). `docs/SPEC_AMBIGUITIES.md` và `docs/UPGRADE_REPORT.md` cũng được giữ cục bộ. Không đưa các tài liệu này lên GitHub khi chưa được phép chia sẻ.
+Đã đọc toàn bộ bốn sheet, không đọc workbook tại runtime. Bảng đối chiếu `docs/TAG_MATRIX.md` và audit `docs/EXCEL_EXAMPLE_AUDIT.md` là tài liệu cục bộ được sinh từ workbook nội bộ; các file này được `.gitignore` bảo vệ và không có trong bản clone sạch. Công cụ tái tạo tài liệu là công cụ nội bộ cục bộ, chưa được phân phối trong repository; người clone không cần công cụ này hoặc workbook để build/chạy/test ứng dụng. `docs/SPEC_AMBIGUITIES.md` và `docs/UPGRADE_REPORT.md` cũng được giữ cục bộ. Không đưa các tài liệu này lên GitHub khi chưa được phép chia sẻ.
 
 | Type | Quy tắc riêng |
 |---|---|
